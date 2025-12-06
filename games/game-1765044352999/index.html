@@ -1,34 +1,57 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <title>Runner</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <style>
     * { box-sizing: border-box; }
-    body, html {
+
+    html, body {
       margin: 0;
       padding: 0;
+      width: 100%;
+      height: 100%;
       overflow: hidden;
       background: #000;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
       color: #fff;
     }
-    #game {
-      display: block;
-      margin: 0 auto;
-      background: #111;
+
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
+
+    #game-container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      max-width: 540px;   /* вертикальный 9:16 */
+      max-height: 960px;
+      margin: 0 auto;
+    }
+
+    #game {
+      width: 100%;
+      height: 100%;
+      display: block;
+      background: #000;
+    }
+
     #hud {
       position: absolute;
-      top: 8px;
-      left: 8px;
-      right: 8px;
+      top: 10px;
+      left: 10px;
+      right: 10px;
       display: flex;
-      justify-content: space-between;
+      justify-content: flex-start;
       align-items: center;
+      gap: 8px;
       pointer-events: none;
     }
+
     #score {
       font-size: 18px;
       text-shadow: 0 0 4px #000;
@@ -36,29 +59,34 @@
   </style>
 </head>
 <body>
-  <canvas id="game" width="800" height="500"></canvas>
-  <div id="hud">
-    <div id="score">0</div>
+  <div id="game-container">
+    <canvas id="game"></canvas>
+    <div id="hud"><div id="score">0</div></div>
   </div>
 
   <script>
-    // ====== ПРОМПТЫ ДЛЯ ГЕНЕРАЦИИ АССЕТОВ ======
-    const BG_PROMPT = "A vibrant park setting with a race track, sunny sky, and cheering fans.";
-    const HERO_PROMPT = "A lively Michael Jackson in his iconic outfit, performing a dance move with enthusiasm, ready for a race.";
+    // ====== ДИНАМИЧЕСКИЕ ПЛЕЙСХОЛДЕРЫ — n8n сюда подставляет ассеты ======
+    const BG_PROMPT = "__BG__";
+    const HERO_PROMPT = "__HERO__";
     const OBSTACLE_PROMPTS = [
-      "Eddie Murphy dressed in running gear, sprinting with a playful smile.",
-      "A puddle of sparkling glitter on the racetrack.",
+      "__OBSTACLE_1__",
+      "__OBSTACLE_2__",
       "__OBSTACLE_3__"
     ];
-    const SCORE_ICON_PROMPT = "A fun icon of a music note combined with a sneaker, symbolizing scores for dancing and running.";
-    // (сейчас игра использует статичные картинки, но эти строки
-    // уже есть в собранном HTML и могут использоваться генератором картинок)
+    const SCORE_ICON_PROMPT = "__SCORE_ICON__";
 
-    // ====== ИГРОВАЯ ЛОГИКА ======
+    // ====== БАЗОВЫЕ РАЗМЕРЫ ДЛЯ ВЕРТИКАЛИ 9:16 ======
+    const BASE_WIDTH = 540;
+    const BASE_HEIGHT = 960;
+
     const canvas = document.getElementById("game");
     const ctx = canvas.getContext("2d");
 
-    const groundY = canvas.height - 80;
+    canvas.width = BASE_WIDTH;
+    canvas.height = BASE_HEIGHT;
+
+    const bgImg = new Image();
+    bgImg.src = "img/bg.png";
 
     const heroImg = new Image();
     heroImg.src = "img/hero.png";
@@ -73,13 +101,15 @@
     const scoreIcon = new Image();
     scoreIcon.src = "img/score_icon.png";
 
-    let hero = {
-      x: 80,
-      y: groundY - 80,
-      w: 60,
-      h: 80,
+    const groundY = BASE_HEIGHT * 0.8;
+
+    const hero = {
+      x: BASE_WIDTH * 0.15,
+      y: groundY - BASE_HEIGHT * 0.12,
+      w: BASE_WIDTH * 0.18,
+      h: BASE_HEIGHT * 0.12,
       vy: 0,
-      jumping: false
+      jumping: false,
     };
 
     let obstacles = [];
@@ -89,12 +119,13 @@
 
     function spawnObstacle() {
       const img = obstacleImages[Math.floor(Math.random() * obstacleImages.length)];
+      const w = BASE_WIDTH * 0.16;
+      const h = BASE_HEIGHT * 0.11;
+
       obstacles.push({
-        x: canvas.width + 20,
-        y: groundY - 70,
-        w: 60,
-        h: 70,
-        img
+        x: BASE_WIDTH + w,
+        y: groundY - h,
+        w, h, img,
       });
     }
 
@@ -109,8 +140,7 @@
     }
 
     function update(dt) {
-      // гравитация
-      hero.vy += 0.8;
+      hero.vy += 0.9;
       hero.y += hero.vy;
 
       if (hero.y >= groundY - hero.h) {
@@ -119,19 +149,16 @@
         hero.jumping = false;
       }
 
-      // движение препятствий
       obstacles.forEach(o => o.x -= speed);
       obstacles = obstacles.filter(o => o.x + o.w > -100);
 
-      // спавн препятствий
       lastSpawn += dt;
-      if (lastSpawn > 1300) {
+      if (lastSpawn > 1200) {
         spawnObstacle();
         lastSpawn = 0;
         speed += 0.1;
       }
 
-      // столкновения
       for (const o of obstacles) {
         if (
           hero.x < o.x + o.w &&
@@ -145,41 +172,33 @@
       }
 
       score += dt * 0.005;
+      document.getElementById("score").textContent = Math.floor(score);
     }
 
     function draw() {
-      ctx.fillStyle = "#151515";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      // земля
-      ctx.fillStyle = "#242424";
-      ctx.fillRect(0, groundY, canvas.width, canvas.height - groundY);
-
-      // герой
-      if (heroImg.complete) {
-        ctx.drawImage(heroImg, hero.x, hero.y, hero.w, hero.h);
+      if (bgImg.complete && bgImg.naturalWidth > 0) {
+        ctx.drawImage(bgImg, 0, 0, BASE_WIDTH, BASE_HEIGHT);
       } else {
-        ctx.fillStyle = "#4caf50";
-        ctx.fillRect(hero.x, hero.y, hero.w, hero.h);
+        ctx.fillStyle = "#151515";
+        ctx.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
       }
 
-      // препятствия
+      ctx.fillStyle = "rgba(0,0,0,0.35)";
+      ctx.fillRect(0, groundY, BASE_WIDTH, BASE_HEIGHT - groundY);
+
+      if (heroImg.complete) {
+        ctx.drawImage(heroImg, hero.x, hero.y, hero.w, hero.h);
+      }
+
       for (const o of obstacles) {
         if (o.img.complete) {
           ctx.drawImage(o.img, o.x, o.y, o.w, o.h);
-        } else {
-          ctx.fillStyle = "#f44336";
-          ctx.fillRect(o.x, o.y, o.w, o.h);
         }
       }
 
-      // HUD
       if (scoreIcon.complete) {
-        ctx.drawImage(scoreIcon, 10, 10, 24, 24);
+        ctx.drawImage(scoreIcon, 16, 16, 32, 32);
       }
-      ctx.fillStyle = "#fff";
-      ctx.font = "18px system-ui";
-      ctx.fillText(Math.floor(score), 40, 30);
     }
 
     let lastTime = performance.now();
@@ -191,20 +210,23 @@
       requestAnimationFrame(loop);
     }
 
-    // управление
-    window.addEventListener("keydown", e => {
-      if ((e.code === "Space" || e.code === "ArrowUp") && !hero.jumping) {
-        hero.vy = -15;
+    function jump() {
+      if (!hero.jumping) {
+        hero.vy = -20;
         hero.jumping = true;
       }
+    }
+
+    window.addEventListener("keydown", e => {
+      if (e.code === "Space" || e.code === "ArrowUp") jump();
     });
 
-    canvas.addEventListener("touchstart", () => {
-      if (!hero.jumping) {
-        hero.vy = -15;
-        hero.jumping = true;
-      }
-    });
+    canvas.addEventListener("touchstart", e => {
+      e.preventDefault();
+      jump();
+    }, { passive: false });
+
+    canvas.addEventListener("mousedown", () => jump());
 
     resetGame();
     requestAnimationFrame(loop);
