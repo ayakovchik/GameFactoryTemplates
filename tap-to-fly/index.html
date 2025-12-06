@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Tap To Fly</title>
+<style>
+    body,html { margin:0; padding:0; overflow:hidden; background:#000; }
+    canvas { display:block; margin:0 auto; background:url('__BG__') center/cover; }
+</style>
+</head>
+<body>
+<canvas id="game" width="800" height="500"></canvas>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+const heroImg = new Image();
+heroImg.src = "__HERO__";
+
+let hero = { x:200, y:200, w:60, h:60, vy:0 };
+
+document.addEventListener("mousedown", ()=>{
+    hero.vy = -8;
+});
+
+const obstacles = [
+    "__OBSTACLE_1__",
+    "__OBSTACLE_2__"
+].map(src=>{
+    const img=new Image(); img.src=src; return img;
+});
+
+let pipes = [];
+
+function spawnPipe(){
+    const gap = 150;
+    const topHeight = Math.random()*250+50;
+    pipes.push({
+        imgTop: obstacles[0],
+        imgBottom: obstacles[1],
+        x:800,
+        topY:0,
+        topH: topHeight,
+        bottomY: topHeight+gap,
+        bottomH: 500-topHeight-gap,
+        w:80
+    });
+}
+
+setInterval(spawnPipe, 1500);
+
+let score=0;
+let scoreIcon=new Image();
+scoreIcon.src="__SCORE_ICON__";
+
+function update(){
+    hero.vy += 0.4;
+    hero.y += hero.vy;
+
+    if(hero.y<0||hero.y>440){
+        score=0;
+        hero.y=200;
+        hero.vy=0;
+    }
+
+    pipes.forEach(p=>{
+        p.x -=5;
+        if(p.x+p.w<0){
+            p.x=800;
+            score++;
+        }
+
+        // collision
+        if(hero.x< p.x+p.w && hero.x+hero.w>p.x){
+            if(hero.y < p.topH || hero.y+hero.h > p.bottomY){
+                score=0;
+                hero.y=200;
+                hero.vy=0;
+            }
+        }
+    });
+}
+
+function draw(){
+    ctx.clearRect(0,0,800,500);
+
+    ctx.drawImage(heroImg,hero.x,hero.y,hero.w,hero.h);
+
+    pipes.forEach(p=>{
+        ctx.drawImage(p.imgTop,p.x,p.topY,p.w,p.topH);
+        ctx.drawImage(p.imgBottom,p.x,p.bottomY,p.w,p.bottomH);
+    });
+
+    ctx.drawImage(scoreIcon,20,20,32,32);
+    ctx.fillStyle="white";
+    ctx.font="24px Arial";
+    ctx.fillText(score,60,45);
+
+    update();
+    requestAnimationFrame(draw);
+}
+
+draw();
+</script>
+</body>
+</html>
