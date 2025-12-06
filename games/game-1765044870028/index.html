@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Runner</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <style>
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      color: #fff;
+    }
+
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #game-container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      max-width: 540px;   /* вертикальный 9:16 */
+      max-height: 960px;
+      margin: 0 auto;
+    }
+
+    #game {
+      width: 100%;
+      height: 100%;
+      display: block;
+      background: #000;
+    }
+
+    #hud {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      right: 10px;
+      display: flex;
+      justify-content: flex-start;
+      align-items: center;
+      gap: 8px;
+      pointer-events: none;
+    }
+
+    #score {
+      font-size: 18px;
+      text-shadow: 0 0 4px #000;
+    }
+  </style>
+</head>
+<body>
+  <div id="game-container">
+    <canvas id="game"></canvas>
+    <div id="hud"><div id="score">0</div></div>
+  </div>
+
+  <script>
+    // ====== ДИНАМИЧЕСКИЕ ПЛЕЙСХОЛДЕРЫ — n8n сюда подставляет ассеты ======
+    const BG_PROMPT = "A dynamic street scene reminiscent of a classic 80s chase, inspired by Beverly Hills Cop, with a humorous and energetic vibe.";
+    const HERO_PROMPT = "Michael Jackson in his iconic Billie Jean outfit, looking determined and ready to chase.";
+    const OBSTACLE_PROMPTS = [
+      "A laughing Eddie Murphy in a vibrant 80s outfit, playfully glancing back at Michael.",
+      "A classic 80s convertible car with its top down, adding to the chase atmosphere.",
+      "A stack of oversized disco records spilling onto the street, humorous and chaotic."
+    ];
+    const SCORE_ICON_PROMPT = "A stylized microphone, symbolizing music and performance, with a fun, retro design.";
+
+    // ====== БАЗОВЫЕ РАЗМЕРЫ ДЛЯ ВЕРТИКАЛИ 9:16 ======
+    const BASE_WIDTH = 540;
+    const BASE_HEIGHT = 960;
+
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+
+    canvas.width = BASE_WIDTH;
+    canvas.height = BASE_HEIGHT;
+
+    const bgImg = new Image();
+    bgImg.src = "img/bg.png";
+
+    const heroImg = new Image();
+    heroImg.src = "img/hero.png";
+
+    const obstacleImages = ["img/obstacle1.png", "img/obstacle2.png", "img/obstacle3.png"]
+      .map(src => {
+        const img = new Image();
+        img.src = src;
+        return img;
+      });
+
+    const scoreIcon = new Image();
+    scoreIcon.src = "img/score_icon.png";
+
+    const groundY = BASE_HEIGHT * 0.8;
+
+    const hero = {
+      x: BASE_WIDTH * 0.15,
+      y: groundY - BASE_HEIGHT * 0.12,
+      w: BASE_WIDTH * 0.18,
+      h: BASE_HEIGHT * 0.12,
+      vy: 0,
+      jumping: false,
+    };
+
+    let obstacles = [];
+    let score = 0;
+    let speed = 6;
+    let lastSpawn = 0;
+
+    function spawnObstacle() {
+      const img = obstacleImages[Math.floor(Math.random() * obstacleImages.length)];
+      const w = BASE_WIDTH * 0.16;
+      const h = BASE_HEIGHT * 0.11;
+
+      obstacles.push({
+        x: BASE_WIDTH + w,
+        y: groundY - h,
+        w, h, img,
+      });
+    }
+
+    function resetGame() {
+      hero.y = groundY - hero.h;
+      hero.vy = 0;
+      hero.jumping = false;
+      obstacles = [];
+      score = 0;
+      speed = 6;
+      lastSpawn = 0;
+    }
+
+    function update(dt) {
+      hero.vy += 0.9;
+      hero.y += hero.vy;
+
+      if (hero.y >= groundY - hero.h) {
+        hero.y = groundY - hero.h;
+        hero.vy = 0;
+        hero.jumping = false;
+      }
+
+      obstacles.forEach(o => o.x -= speed);
+      obstacles = obstacles.filter(o => o.x + o.w > -100);
+
+      lastSpawn += dt;
+      if (lastSpawn > 1200) {
+        spawnObstacle();
+        lastSpawn = 0;
+        speed += 0.1;
+      }
+
+      for (const o of obstacles) {
+        if (
+          hero.x < o.x + o.w &&
+          hero.x + hero.w > o.x &&
+          hero.y < o.y + o.h &&
+          hero.y + hero.h > o.y
+        ) {
+          resetGame();
+          break;
+        }
+      }
+
+      score += dt * 0.005;
+      document.getElementById("score").textContent = Math.floor(score);
+    }
+
+    function draw() {
+      if (bgImg.complete && bgImg.naturalWidth > 0) {
+        ctx.drawImage(bgImg, 0, 0, BASE_WIDTH, BASE_HEIGHT);
+      } else {
+        ctx.fillStyle = "#151515";
+        ctx.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
+      }
+
+      ctx.fillStyle = "rgba(0,0,0,0.35)";
+      ctx.fillRect(0, groundY, BASE_WIDTH, BASE_HEIGHT - groundY);
+
+      if (heroImg.complete) {
+        ctx.drawImage(heroImg, hero.x, hero.y, hero.w, hero.h);
+      }
+
+      for (const o of obstacles) {
+        if (o.img.complete) {
+          ctx.drawImage(o.img, o.x, o.y, o.w, o.h);
+        }
+      }
+
+      if (scoreIcon.complete) {
+        ctx.drawImage(scoreIcon, 16, 16, 32, 32);
+      }
+    }
+
+    let lastTime = performance.now();
+    function loop(t) {
+      const dt = t - lastTime;
+      lastTime = t;
+      update(dt);
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    function jump() {
+      if (!hero.jumping) {
+        hero.vy = -20;
+        hero.jumping = true;
+      }
+    }
+
+    window.addEventListener("keydown", e => {
+      if (e.code === "Space" || e.code === "ArrowUp") jump();
+    });
+
+    canvas.addEventListener("touchstart", e => {
+      e.preventDefault();
+      jump();
+    }, { passive: false });
+
+    canvas.addEventListener("mousedown", () => jump());
+
+    resetGame();
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
