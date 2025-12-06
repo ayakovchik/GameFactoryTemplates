@@ -1,61 +1,245 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-<meta charset="UTF-8">
-<title>Obstacle Push</title>
-<style>
-    body,html { margin:0; padding:0; background:#000; overflow:hidden; }
-    canvas { display:block; margin:0 auto; background:url('__BG__') center/cover; }
-</style>
+  <meta charset="UTF-8" />
+  <title>Obstacle Push</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    * { box-sizing: border-box; }
+    body, html {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #000;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      color: #fff;
+    }
+    #game {
+      display: block;
+      margin: 0 auto;
+      background: #111;
+    }
+    #hud {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      right: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      pointer-events: none;
+    }
+    #score {
+      font-size: 18px;
+      text-shadow: 0 0 4px #000;
+    }
+  </style>
 </head>
 <body>
-<canvas id="game" width="800" height="500"></canvas>
+  <canvas id="game" width="800" height="500"></canvas>
+  <div id="hud">
+    <div id="score">0</div>
+  </div>
 
-<script>
-const canvas=document.getElementById("game");
-const ctx=canvas.getContext("2d");
+  <script>
+    // ====== ПРОМПТЫ ДЛЯ ГЕНЕРАЦИИ АССЕТОВ ======
+    const BG_PROMPT = "__BG__";
+    const HERO_PROMPT = "__HERO__";
+    const OBSTACLE_PROMPTS = [
+      "__OBSTACLE_1__",
+      "__OBSTACLE_2__",
+      "__OBSTACLE_3__"
+    ];
+    const SCORE_ICON_PROMPT = "__SCORE_ICON__";
 
-const heroImg=new Image(); heroImg.src="__HERO__";
-const obstacleImg=new Image(); obstacleImg.src="__OBSTACLE_1__";
-const scoreIcon=new Image(); scoreIcon.src="__SCORE_ICON__";
+    // ====== OBSTACLE-PUSH ======
+    // Герой бежит вперёд по "коридору" и может:
+    // - ускоряться, чтобы проталкивать лёгкие объекты
+    // - притормаживать/обходить тяжёлые (иначе отбрасывает назад)
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
 
-let hero={x:100,y:300,w:80,h:80};
-let obstacle={x:400,y:300,w:120,h:120};
+    const heroImg = new Image();
+    heroImg.src = "img/hero.png";
 
-document.addEventListener("keydown",e=>{
-    if(e.code==="ArrowRight") hero.x+=10;
-    if(e.code==="ArrowLeft") hero.x-=10;
-});
+    const obstacleImgs = ["img/obstacle1.png", "img/obstacle2.png", "img/obstacle3.png"]
+      .map(src => {
+        const img = new Image();
+        img.src = src;
+        return img;
+      });
 
-let score=0;
+    const scoreIcon = new Image();
+    scoreIcon.src = "img/score_icon.png";
 
-function update(){
-    if(hero.x+hero.w > obstacle.x){
-        obstacle.x+=8;
-        score++;
+    const groundY = canvas.height - 80;
+
+    let hero = {
+      x: 120,
+      y: groundY - 70,
+      w: 60,
+      h: 70,
+      speed: 4,
+      vx: 0,
+    };
+
+    let worldOffset = 0;
+    let obstacles = [];
+    let score = 0;
+    let lastSpawn = 0;
+
+    function spawnObstacle() {
+      const img = obstacleImgs[Math.floor(Math.random() * obstacleImgs.length)];
+      const type = Math.random() < 0.5 ? "light" : "heavy";
+      const size = type === "light" ? 60 : 90;
+
+      obstacles.push({
+        x: worldOffset + canvas.width + 40,
+        y: groundY - size,
+        w: size,
+        h: size,
+        img,
+        type,         // light: можно толкать, heavy: отбрасывает назад
+        pushed: false
+      });
     }
 
-    if(obstacle.x>800){
-        obstacle.x=400;
-        score=0;
+    function resetGame() {
+      hero.x = 120;
+      hero.y = groundY - hero.h;
+      hero.vx = 0;
+      worldOffset = 0;
+      obstacles = [];
+      score = 0;
+      lastSpawn = 0;
     }
-}
 
-function draw(){
-    ctx.clearRect(0,0,800,500);
+    function update(dt) {
+      const baseSpeed = hero.speed + hero.vx;
+      worldOffset += baseSpeed;
 
-    ctx.drawImage(heroImg,hero.x,hero.y,hero.w,hero.h);
-    ctx.drawImage(obstacleImg,obstacle.x,obstacle.y,obstacle.w,obstacle.h);
+      // обновляем «мир»
+      obstacles.forEach(o => {
+        o.x -= baseSpeed;
+      });
+      obstacles = obstacles.filter(o => o.x + o.w > -200);
 
-    ctx.drawImage(scoreIcon,20,20,32,32);
-    ctx.fillStyle="white"; ctx.font="24px Arial";
-    ctx.fillText(score,60,45);
+      // спавним новые
+      lastSpawn += dt;
+      if (lastSpawn > 1200) {
+        spawnObstacle();
+        lastSpawn = 0;
+      }
 
-    update();
-    requestAnimationFrame(draw);
-}
+      // столкновения
+      for (const o of obstacles) {
+        const heroRect = { x: hero.x, y: hero.y, w: hero.w, h: hero.h };
+        const oRect = { x: o.x, y: o.y, w: o.w, h: o.h };
 
-draw();
-</script>
+        const colliding =
+          heroRect.x < oRect.x + oRect.w &&
+          heroRect.x + heroRect.w > oRect.x &&
+          heroRect.y < oRect.y + oRect.h &&
+          heroRect.y + heroRect.h > oRect.y;
+
+        if (!colliding) continue;
+
+        if (o.type === "light") {
+          // толкаем объект вперёд
+          o.x += baseSpeed * 1.5;
+          if (!o.pushed) {
+            o.pushed = true;
+            score += 2;
+          }
+        } else {
+          // тяжёлое препятствие – героя отбрасывает назад
+          worldOffset -= 80;
+          score = Math.max(0, score - 3);
+        }
+      }
+
+      // счёт за пройденную дистанцию
+      score += dt * 0.003;
+    }
+
+    function draw() {
+      ctx.fillStyle = "#151515";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // пол
+      ctx.fillStyle = "#242424";
+      ctx.fillRect(0, groundY, canvas.width, canvas.height - groundY);
+
+      // препятствия
+      for (const o of obstacles) {
+        if (o.img.complete) {
+          ctx.drawImage(o.img, o.x, o.y, o.w, o.h);
+        } else {
+          ctx.fillStyle = o.type === "light" ? "#ff9800" : "#e91e63";
+          ctx.fillRect(o.x, o.y, o.w, o.h);
+        }
+      }
+
+      // герой
+      if (heroImg.complete) {
+        ctx.drawImage(heroImg, hero.x, hero.y, hero.w, hero.h);
+      } else {
+        ctx.fillStyle = "#03a9f4";
+        ctx.fillRect(hero.x, hero.y, hero.w, hero.h);
+      }
+
+      // HUD
+      if (scoreIcon.complete) {
+        ctx.drawImage(scoreIcon, 10, 10, 24, 24);
+      }
+      ctx.fillStyle = "#fff";
+      ctx.font = "18px system-ui";
+      ctx.fillText(Math.floor(score), 40, 30);
+    }
+
+    let lastTime = performance.now();
+    function loop(t) {
+      const dt = t - lastTime;
+      lastTime = t;
+      update(dt);
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    // управление: ускоряемся или замедляемся
+    window.addEventListener("keydown", e => {
+      if (e.code === "ArrowRight" || e.code === "KeyD") {
+        hero.vx = 3;   // ускоряемся, чтобы проталкивать
+      }
+      if (e.code === "ArrowLeft" || e.code === "KeyA") {
+        hero.vx = -2;  // замедляемся, чтобы аккуратно проходить
+      }
+    });
+
+    window.addEventListener("keyup", e => {
+      if (
+        e.code === "ArrowRight" || e.code === "KeyD" ||
+        e.code === "ArrowLeft"  || e.code === "KeyA"
+      ) {
+        hero.vx = 0;
+      }
+    });
+
+    canvas.addEventListener("touchstart", e => {
+      const x = e.touches[0].clientX - canvas.getBoundingClientRect().left;
+      if (x > canvas.width / 2) {
+        hero.vx = 3;
+      } else {
+        hero.vx = -2;
+      }
+    });
+
+    canvas.addEventListener("touchend", () => {
+      hero.vx = 0;
+    });
+
+    resetGame();
+    requestAnimationFrame(loop);
+  </script>
 </body>
 </html>
