@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <title>Tap to Fly</title>
+  <title>Jumper</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     * { box-sizing: border-box; }
@@ -52,123 +52,108 @@
     ];
     const SCORE_ICON_PROMPT = "__SCORE_ICON__";
 
-    // ====== ИГРА TAP-TO-FLY (FLAPPY-СТИЛЬ) ======
+    // ====== JUMPER: ПЛАТФОРМЕР С ВВЕРХНИМ СКРОЛЛОМ ======
     const canvas = document.getElementById("game");
     const ctx = canvas.getContext("2d");
 
     const heroImg = new Image();
     heroImg.src = "img/hero.png";
 
-    const pipeImgTop = new Image();
-    pipeImgTop.src = "img/obstacle1.png";
-
-    const pipeImgBottom = new Image();
-    pipeImgBottom.src = "img/obstacle2.png";
+    const platformImg = new Image();
+    platformImg.src = "img/obstacle1.png";
 
     const scoreIcon = new Image();
     scoreIcon.src = "img/score_icon.png";
 
-    const GRAVITY = 0.7;
-    const JUMP_FORCE = -10;
+    const GRAVITY = 0.5;
+    const JUMP_FORCE = -12;
 
     let hero = {
-      x: 200,
-      y: canvas.height / 2,
+      x: canvas.width / 2 - 30,
+      y: canvas.height - 100,
       w: 60,
       h: 60,
       vy: 0,
+      onGround: false,
     };
 
-    let pipes = [];
+    let platforms = [];
     let score = 0;
-    let lastSpawn = 0;
-    const PIPE_GAP = 150;
-    const PIPE_WIDTH = 80;
-    let speed = 3.5;
+    let scrollOffset = 0;
 
-    function spawnPipe() {
-      const center = 120 + Math.random() * (canvas.height - 240);
-      pipes.push({
-        x: canvas.width + 40,
-        top: {
-          x: 0, y: 0, w: PIPE_WIDTH, h: center - PIPE_GAP / 2
-        },
-        bottom: {
-          x: 0, y: center + PIPE_GAP / 2, w: PIPE_WIDTH, h: canvas.height - (center + PIPE_GAP / 2)
-        },
-        passed: false
+    function createInitialPlatforms() {
+      platforms = [];
+      const step = 70;
+      for (let i = 0; i < 10; i++) {
+        platforms.push({
+          x: Math.random() * (canvas.width - 120),
+          y: canvas.height - i * step,
+          w: 120,
+          h: 20,
+        });
+      }
+    }
+
+    function addPlatform(y) {
+      platforms.push({
+        x: Math.random() * (canvas.width - 120),
+        y,
+        w: 120,
+        h: 20,
       });
     }
 
     function resetGame() {
-      hero.y = canvas.height / 2;
+      hero.x = canvas.width / 2 - hero.w / 2;
+      hero.y = canvas.height - 100;
       hero.vy = 0;
-      pipes = [];
+      hero.onGround = false;
       score = 0;
-      lastSpawn = 0;
-      speed = 3.5;
+      scrollOffset = 0;
+      createInitialPlatforms();
     }
 
     function update(dt) {
+      // физика героя
       hero.vy += GRAVITY;
       hero.y += hero.vy;
 
-      // границы
-      if (hero.y < 0) {
-        hero.y = 0;
-        hero.vy = 0;
-      }
-      if (hero.y + hero.h > canvas.height) {
+      // если герой падает вниз - конец
+      if (hero.y - scrollOffset > canvas.height + 100) {
         resetGame();
         return;
       }
 
-      // трубы
-      pipes.forEach(p => p.x -= speed);
-      pipes = pipes.filter(p => p.x + PIPE_WIDTH > -100);
+      // столкновения с платформами (только если падаем вниз)
+      hero.onGround = false;
+      for (const p of platforms) {
+        const prevY = hero.y - hero.vy;
+        const isFalling = hero.vy > 0;
+        const withinX = hero.x + hero.w > p.x && hero.x < p.x + p.w;
+        const crossedY = prevY + hero.h <= p.y && hero.y + hero.h >= p.y;
 
-      lastSpawn += dt;
-      if (lastSpawn > 1300) {
-        spawnPipe();
-        lastSpawn = 0;
-        speed += 0.05;
+        if (isFalling && withinX && crossedY) {
+          hero.y = p.y - hero.h;
+          hero.vy = JUMP_FORCE;
+          hero.onGround = true;
+          score += 1;
+        }
       }
 
-      // столкновения и подсчет очков
-      for (const p of pipes) {
-        const topRect = {
-          x: p.x,
-          y: 0,
-          w: PIPE_WIDTH,
-          h: p.top.h
-        };
-        const bottomRect = {
-          x: p.x,
-          y: p.bottom.y,
-          w: PIPE_WIDTH,
-          h: p.bottom.h
-        };
+      // вертикальный скролл – герой остаётся примерно в середине
+      const threshold = canvas.height * 0.4;
+      if (hero.y < threshold) {
+        const diff = threshold - hero.y;
+        hero.y += diff;
+        scrollOffset += diff;
+        platforms.forEach(p => p.y += diff);
+      }
 
-        const heroRect = { x: hero.x, y: hero.y, w: hero.w, h: hero.h };
-
-        function collide(a, b) {
-          return (
-            a.x < b.x + b.w &&
-            a.x + a.w > b.x &&
-            a.y < b.y + b.h &&
-            a.y + a.h > b.y
-          );
-        }
-
-        if (collide(heroRect, topRect) || collide(heroRect, bottomRect)) {
-          resetGame();
-          break;
-        }
-
-        if (!p.passed && p.x + PIPE_WIDTH < hero.x) {
-          p.passed = true;
-          score++;
-        }
+      // убираем платформы, что ушли вниз, и добавляем новые сверху
+      const minY = Math.min(...platforms.map(p => p.y));
+      platforms = platforms.filter(p => p.y < canvas.height + 50);
+      while (platforms.length < 12) {
+        addPlatform(minY - Math.random() * 60 - 40);
       }
     }
 
@@ -176,20 +161,13 @@
       ctx.fillStyle = "#151515";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // трубы
-      for (const p of pipes) {
-        if (pipeImgTop.complete) {
-          ctx.drawImage(pipeImgTop, p.x, 0, PIPE_WIDTH, p.top.h);
+      // платформы
+      for (const p of platforms) {
+        if (platformImg.complete) {
+          ctx.drawImage(platformImg, p.x, p.y, p.w, p.h);
         } else {
-          ctx.fillStyle = "#4caf50";
-          ctx.fillRect(p.x, 0, PIPE_WIDTH, p.top.h);
-        }
-
-        if (pipeImgBottom.complete) {
-          ctx.drawImage(pipeImgBottom, p.x, p.bottom.y, PIPE_WIDTH, p.bottom.h);
-        } else {
-          ctx.fillStyle = "#4caf50";
-          ctx.fillRect(p.x, p.bottom.y, PIPE_WIDTH, p.bottom.h);
+          ctx.fillStyle = "#607d8b";
+          ctx.fillRect(p.x, p.y, p.w, p.h);
         }
       }
 
@@ -197,7 +175,7 @@
       if (heroImg.complete) {
         ctx.drawImage(heroImg, hero.x, hero.y, hero.w, hero.h);
       } else {
-        ctx.fillStyle = "#ffeb3b";
+        ctx.fillStyle = "#ff9800";
         ctx.fillRect(hero.x, hero.y, hero.w, hero.h);
       }
 
@@ -206,7 +184,7 @@
         ctx.drawImage(scoreIcon, 10, 10, 24, 24);
       }
       ctx.fillStyle = "#fff";
-      ctx.font = "20px system-ui";
+      ctx.font = "18px system-ui";
       ctx.fillText(score, 40, 30);
     }
 
@@ -219,21 +197,51 @@
       requestAnimationFrame(loop);
     }
 
-    function flap() {
-      hero.vy = JUMP_FORCE;
-    }
-
     // управление
+    const keys = { left: false, right: false };
+
     window.addEventListener("keydown", e => {
-      if (e.code === "Space" || e.code === "ArrowUp") {
-        flap();
-      }
+      if (e.code === "ArrowLeft" || e.code === "KeyA") keys.left = true;
+      if (e.code === "ArrowRight" || e.code === "KeyD") keys.right = true;
     });
 
-    canvas.addEventListener("touchstart", flap);
+    window.addEventListener("keyup", e => {
+      if (e.code === "ArrowLeft" || e.code === "KeyA") keys.left = false;
+      if (e.code === "ArrowRight" || e.code === "KeyD") keys.right = false;
+    });
+
+    canvas.addEventListener("touchstart", e => {
+      const x = e.touches[0].clientX - canvas.getBoundingClientRect().left;
+      keys.left = x < canvas.width / 2;
+      keys.right = !keys.left;
+    });
+
+    canvas.addEventListener("touchend", () => {
+      keys.left = keys.right = false;
+    });
+
+    function applyHorizontalMove() {
+      const speed = 6;
+      if (keys.left) hero.x -= speed;
+      if (keys.right) hero.x += speed;
+      if (hero.x < 0) hero.x = 0;
+      if (hero.x + hero.w > canvas.width) hero.x = canvas.width - hero.w;
+    }
+
+    // маленький хак – двигаем по X в каждом кадре
+    (function patchLoop() {
+      const origLoop = loop;
+      function wrapped(t) {
+        applyHorizontalMove();
+        origLoop(t);
+      }
+      requestAnimationFrame(function start(t) {
+        lastTime = t;
+        requestAnimationFrame(wrapped);
+      });
+    })();
 
     resetGame();
-    requestAnimationFrame(loop);
   </script>
 </body>
 </html>
