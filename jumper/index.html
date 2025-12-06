@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Jumper</title>
+<style>
+    body,html { margin:0; padding:0; overflow:hidden; background:#000; }
+    canvas { display:block; background:url('__BG__') center/cover; margin:0 auto; }
+</style>
+</head>
+<body>
+<canvas id="game" width="800" height="500"></canvas>
+
+<script>
+const canvas=document.getElementById("game");
+const ctx=canvas.getContext("2d");
+
+const heroImg=new Image(); heroImg.src="__HERO__";
+
+let hero={ x:100, y:300, w:70, h:70, vy:0, jumping:false };
+
+const platforms=[
+    {x:100,y:400,w:200,h:20},
+    {x:400,y:350,w:200,h:20},
+    {x:650,y:300,w:150,h:20}
+];
+
+document.addEventListener("keydown",e=>{
+    if(e.code==="Space" && !hero.jumping){
+        hero.vy=-10;
+        hero.jumping=true;
+    }
+});
+
+let score=0;
+let scoreIcon=new Image(); scoreIcon.src="__SCORE_ICON__";
+
+function update(){
+    hero.vy+=0.4;
+    hero.y+=hero.vy;
+
+    platforms.forEach(p=>{
+        if(hero.x+hero.w>p.x && hero.x<p.x+p.w && hero.y+hero.h>p.y && hero.y+hero.h<p.y+20){
+            hero.y=p.y-hero.h;
+            hero.vy=0;
+            hero.jumping=false;
+            score++;
+        }
+    });
+
+    if(hero.y>500){
+        hero.y=300; score=0;
+    }
+}
+
+function draw(){
+    ctx.clearRect(0,0,800,500);
+
+    ctx.drawImage(heroImg,hero.x,hero.y,hero.w,hero.h);
+
+    ctx.fillStyle="rgba(255,255,255,0.7)";
+    platforms.forEach(p=>ctx.fillRect(p.x,p.y,p.w,p.h));
+
+    ctx.drawImage(scoreIcon,20,20,32,32);
+    ctx.fillStyle="white"; ctx.font="24px Arial";
+    ctx.fillText(score,60,45);
+
+    update(); requestAnimationFrame(draw);
+}
+
+draw();
+</script>
+</body>
+</html>
