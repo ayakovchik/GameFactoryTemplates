@@ -1,107 +1,239 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-<meta charset="UTF-8">
-<title>Tap To Fly</title>
-<style>
-    body,html { margin:0; padding:0; overflow:hidden; background:#000; }
-    canvas { display:block; margin:0 auto; background:url('__BG__') center/cover; }
-</style>
+  <meta charset="UTF-8" />
+  <title>Tap to Fly</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    * { box-sizing: border-box; }
+    body, html {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #000;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      color: #fff;
+    }
+    #game {
+      display: block;
+      margin: 0 auto;
+      background: #111;
+    }
+    #hud {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      right: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      pointer-events: none;
+    }
+    #score {
+      font-size: 18px;
+      text-shadow: 0 0 4px #000;
+    }
+  </style>
 </head>
 <body>
-<canvas id="game" width="800" height="500"></canvas>
+  <canvas id="game" width="800" height="500"></canvas>
+  <div id="hud">
+    <div id="score">0</div>
+  </div>
 
-<script>
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
+  <script>
+    // ====== ПРОМПТЫ ДЛЯ ГЕНЕРАЦИИ АССЕТОВ ======
+    const BG_PROMPT = "__BG__";
+    const HERO_PROMPT = "__HERO__";
+    const OBSTACLE_PROMPTS = [
+      "__OBSTACLE_1__",
+      "__OBSTACLE_2__",
+      "__OBSTACLE_3__"
+    ];
+    const SCORE_ICON_PROMPT = "__SCORE_ICON__";
 
-const heroImg = new Image();
-heroImg.src = "__HERO__";
+    // ====== ИГРА TAP-TO-FLY (FLAPPY-СТИЛЬ) ======
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
 
-let hero = { x:200, y:200, w:60, h:60, vy:0 };
+    const heroImg = new Image();
+    heroImg.src = "img/hero.png";
 
-document.addEventListener("mousedown", ()=>{
-    hero.vy = -8;
-});
+    const pipeImgTop = new Image();
+    pipeImgTop.src = "img/obstacle1.png";
 
-const obstacles = [
-    "__OBSTACLE_1__",
-    "__OBSTACLE_2__"
-].map(src=>{
-    const img=new Image(); img.src=src; return img;
-});
+    const pipeImgBottom = new Image();
+    pipeImgBottom.src = "img/obstacle2.png";
 
-let pipes = [];
+    const scoreIcon = new Image();
+    scoreIcon.src = "img/score_icon.png";
 
-function spawnPipe(){
-    const gap = 150;
-    const topHeight = Math.random()*250+50;
-    pipes.push({
-        imgTop: obstacles[0],
-        imgBottom: obstacles[1],
-        x:800,
-        topY:0,
-        topH: topHeight,
-        bottomY: topHeight+gap,
-        bottomH: 500-topHeight-gap,
-        w:80
-    });
-}
+    const GRAVITY = 0.7;
+    const JUMP_FORCE = -10;
 
-setInterval(spawnPipe, 1500);
+    let hero = {
+      x: 200,
+      y: canvas.height / 2,
+      w: 60,
+      h: 60,
+      vy: 0,
+    };
 
-let score=0;
-let scoreIcon=new Image();
-scoreIcon.src="__SCORE_ICON__";
+    let pipes = [];
+    let score = 0;
+    let lastSpawn = 0;
+    const PIPE_GAP = 150;
+    const PIPE_WIDTH = 80;
+    let speed = 3.5;
 
-function update(){
-    hero.vy += 0.4;
-    hero.y += hero.vy;
-
-    if(hero.y<0||hero.y>440){
-        score=0;
-        hero.y=200;
-        hero.vy=0;
+    function spawnPipe() {
+      const center = 120 + Math.random() * (canvas.height - 240);
+      pipes.push({
+        x: canvas.width + 40,
+        top: {
+          x: 0, y: 0, w: PIPE_WIDTH, h: center - PIPE_GAP / 2
+        },
+        bottom: {
+          x: 0, y: center + PIPE_GAP / 2, w: PIPE_WIDTH, h: canvas.height - (center + PIPE_GAP / 2)
+        },
+        passed: false
+      });
     }
 
-    pipes.forEach(p=>{
-        p.x -=5;
-        if(p.x+p.w<0){
-            p.x=800;
-            score++;
+    function resetGame() {
+      hero.y = canvas.height / 2;
+      hero.vy = 0;
+      pipes = [];
+      score = 0;
+      lastSpawn = 0;
+      speed = 3.5;
+    }
+
+    function update(dt) {
+      hero.vy += GRAVITY;
+      hero.y += hero.vy;
+
+      // границы
+      if (hero.y < 0) {
+        hero.y = 0;
+        hero.vy = 0;
+      }
+      if (hero.y + hero.h > canvas.height) {
+        resetGame();
+        return;
+      }
+
+      // трубы
+      pipes.forEach(p => p.x -= speed);
+      pipes = pipes.filter(p => p.x + PIPE_WIDTH > -100);
+
+      lastSpawn += dt;
+      if (lastSpawn > 1300) {
+        spawnPipe();
+        lastSpawn = 0;
+        speed += 0.05;
+      }
+
+      // столкновения и подсчет очков
+      for (const p of pipes) {
+        const topRect = {
+          x: p.x,
+          y: 0,
+          w: PIPE_WIDTH,
+          h: p.top.h
+        };
+        const bottomRect = {
+          x: p.x,
+          y: p.bottom.y,
+          w: PIPE_WIDTH,
+          h: p.bottom.h
+        };
+
+        const heroRect = { x: hero.x, y: hero.y, w: hero.w, h: hero.h };
+
+        function collide(a, b) {
+          return (
+            a.x < b.x + b.w &&
+            a.x + a.w > b.x &&
+            a.y < b.y + b.h &&
+            a.y + a.h > b.y
+          );
         }
 
-        // collision
-        if(hero.x< p.x+p.w && hero.x+hero.w>p.x){
-            if(hero.y < p.topH || hero.y+hero.h > p.bottomY){
-                score=0;
-                hero.y=200;
-                hero.vy=0;
-            }
+        if (collide(heroRect, topRect) || collide(heroRect, bottomRect)) {
+          resetGame();
+          break;
         }
+
+        if (!p.passed && p.x + PIPE_WIDTH < hero.x) {
+          p.passed = true;
+          score++;
+        }
+      }
+    }
+
+    function draw() {
+      ctx.fillStyle = "#151515";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // трубы
+      for (const p of pipes) {
+        if (pipeImgTop.complete) {
+          ctx.drawImage(pipeImgTop, p.x, 0, PIPE_WIDTH, p.top.h);
+        } else {
+          ctx.fillStyle = "#4caf50";
+          ctx.fillRect(p.x, 0, PIPE_WIDTH, p.top.h);
+        }
+
+        if (pipeImgBottom.complete) {
+          ctx.drawImage(pipeImgBottom, p.x, p.bottom.y, PIPE_WIDTH, p.bottom.h);
+        } else {
+          ctx.fillStyle = "#4caf50";
+          ctx.fillRect(p.x, p.bottom.y, PIPE_WIDTH, p.bottom.h);
+        }
+      }
+
+      // герой
+      if (heroImg.complete) {
+        ctx.drawImage(heroImg, hero.x, hero.y, hero.w, hero.h);
+      } else {
+        ctx.fillStyle = "#ffeb3b";
+        ctx.fillRect(hero.x, hero.y, hero.w, hero.h);
+      }
+
+      // HUD
+      if (scoreIcon.complete) {
+        ctx.drawImage(scoreIcon, 10, 10, 24, 24);
+      }
+      ctx.fillStyle = "#fff";
+      ctx.font = "20px system-ui";
+      ctx.fillText(score, 40, 30);
+    }
+
+    let lastTime = performance.now();
+    function loop(t) {
+      const dt = t - lastTime;
+      lastTime = t;
+      update(dt);
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    function flap() {
+      hero.vy = JUMP_FORCE;
+    }
+
+    // управление
+    window.addEventListener("keydown", e => {
+      if (e.code === "Space" || e.code === "ArrowUp") {
+        flap();
+      }
     });
-}
 
-function draw(){
-    ctx.clearRect(0,0,800,500);
+    canvas.addEventListener("touchstart", flap);
 
-    ctx.drawImage(heroImg,hero.x,hero.y,hero.w,hero.h);
-
-    pipes.forEach(p=>{
-        ctx.drawImage(p.imgTop,p.x,p.topY,p.w,p.topH);
-        ctx.drawImage(p.imgBottom,p.x,p.bottomY,p.w,p.bottomH);
-    });
-
-    ctx.drawImage(scoreIcon,20,20,32,32);
-    ctx.fillStyle="white";
-    ctx.font="24px Arial";
-    ctx.fillText(score,60,45);
-
-    update();
-    requestAnimationFrame(draw);
-}
-
-draw();
-</script>
+    resetGame();
+    requestAnimationFrame(loop);
+  </script>
 </body>
 </html>
