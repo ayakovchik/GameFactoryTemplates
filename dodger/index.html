@@ -1,98 +1,230 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-<meta charset="UTF-8">
-<title>Dodger</title>
-<style>
-    body,html { margin:0; padding:0; overflow:hidden; background:#000; }
-    canvas { display:block; margin:0 auto; background:url('__BG__') center/cover; }
-</style>
+  <meta charset="UTF-8" />
+  <title>Dodger</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    * { box-sizing: border-box; }
+    body, html {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #000;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      color: #fff;
+    }
+    #game {
+      display: block;
+      margin: 0 auto;
+      background: #111;
+    }
+    #hud {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      right: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      pointer-events: none;
+    }
+    #score {
+      font-size: 18px;
+      text-shadow: 0 0 4px #000;
+    }
+  </style>
 </head>
 <body>
-<canvas id="game" width="800" height="500"></canvas>
+  <canvas id="game" width="800" height="500"></canvas>
+  <div id="hud">
+    <div id="score">0</div>
+  </div>
 
-<script>
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
+  <script>
+    // ====== ПРОМПТЫ ДЛЯ ГЕНЕРАЦИИ АССЕТОВ ======
+    const BG_PROMPT = "__BG__";
+    const HERO_PROMPT = "__HERO__";
+    const OBSTACLE_PROMPTS = [
+      "__OBSTACLE_1__",
+      "__OBSTACLE_2__",
+      "__OBSTACLE_3__"
+    ];
+    const SCORE_ICON_PROMPT = "__SCORE_ICON__";
+    // (игра сейчас использует статичные картинки, но эти строки
+    // попадают в итоговый HTML и могут использоваться генератором ассетов)
 
-const heroImg = new Image();
-heroImg.src = "__HERO__";
+    // ====== ИГРОВАЯ ЛОГИКА DODGER ======
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
 
-let hero = { x:400, y:250, w:70, h:70, speed:6 };
+    const heroImg = new Image();
+    heroImg.src = "img/hero.png";
 
-const keys = {};
-document.addEventListener("keydown", e=>keys[e.code]=true);
-document.addEventListener("keyup", e=>keys[e.code]=false);
+    const obstacleImages = ["img/obstacle1.png", "img/obstacle2.png", "img/obstacle3.png"]
+      .map(src => {
+        const img = new Image();
+        img.src = src;
+        return img;
+      });
 
-const obstacleImgs = ["__OBSTACLE_1__", "__OBSTACLE_2__", "__OBSTACLE_3__"].map(s=>{
-    const i=new Image(); i.src=s; return i;
-});
+    const scoreIcon = new Image();
+    scoreIcon.src = "img/score_icon.png";
 
-let obstacles = [];
+    const groundY = canvas.height - 70;
 
-function spawnObstacle(){
-    const img = obstacleImgs[Math.floor(Math.random()*obstacleImgs.length)];
-    obstacles.push({
+    let hero = {
+      x: canvas.width / 2 - 30,
+      y: groundY - 60,
+      w: 60,
+      h: 60,
+      speed: 8,
+      dir: 0, // -1 влево, 1 вправо, 0 стоим
+    };
+
+    let obstacles = [];
+    let score = 0;
+    let fallSpeed = 3;
+    let lastSpawn = 0;
+
+    function spawnObstacle() {
+      const img = obstacleImages[Math.floor(Math.random() * obstacleImages.length)];
+      const size = 50 + Math.random() * 30;
+      obstacles.push({
+        x: Math.random() * (canvas.width - size),
+        y: -size,
+        w: size,
+        h: size,
+        vy: fallSpeed + Math.random() * 2,
         img,
-        x: Math.random()>0.5 ? -50 : 850,
-        y: Math.random()*450,
-        w:70,
-        h:70,
-        vx: (Math.random()*4+2)*(Math.random()>0.5?1:-1),
-        vy: (Math.random()*4+2)*(Math.random()>0.5?1:-1)
-    });
-}
+      });
+    }
 
-setInterval(spawnObstacle, 800);
+    function resetGame() {
+      hero.x = canvas.width / 2 - hero.w / 2;
+      hero.dir = 0;
+      obstacles = [];
+      score = 0;
+      fallSpeed = 3;
+      lastSpawn = 0;
+    }
 
-let score = 0;
-let scoreIcon = new Image();
-scoreIcon.src = "__SCORE_ICON__";
+    function update(dt) {
+      // движение героя по горизонтали
+      hero.x += hero.dir * hero.speed;
+      if (hero.x < 0) hero.x = 0;
+      if (hero.x + hero.w > canvas.width) hero.x = canvas.width - hero.w;
 
-function update(){
-    if(keys["ArrowUp"]) hero.y -= hero.speed;
-    if(keys["ArrowDown"]) hero.y += hero.speed;
-    if(keys["ArrowLeft"]) hero.x -= hero.speed;
-    if(keys["ArrowRight"]) hero.x += hero.speed;
-
-    hero.x = Math.max(0, Math.min(800-hero.w, hero.x));
-    hero.y = Math.max(0, Math.min(500-hero.h, hero.y));
-
-    obstacles.forEach(o=>{
-        o.x += o.vx;
+      // движение препятствий
+      obstacles.forEach(o => {
         o.y += o.vy;
+      });
 
-        if(o.x<-100||o.x>900||o.y<-100||o.y>600){
-            o.x = 400;
-            o.y = 250;
-            score++;
+      // удаляем вылетевшие вниз
+      obstacles = obstacles.filter(o => o.y < canvas.height + o.h);
+
+      // спавн новых
+      lastSpawn += dt;
+      if (lastSpawn > 800) {
+        spawnObstacle();
+        lastSpawn = 0;
+        fallSpeed += 0.05;
+      }
+
+      // столкновения
+      for (const o of obstacles) {
+        if (
+          hero.x < o.x + o.w &&
+          hero.x + hero.w > o.x &&
+          hero.y < o.y + o.h &&
+          hero.y + hero.h > o.y
+        ) {
+          // столкнулись – начинаем заново
+          resetGame();
+          break;
         }
+      }
 
-        if(hero.x<o.x+o.w && hero.x+hero.w>o.x && hero.y<o.y+o.h){
-            score = 0;
+      score += dt * 0.005;
+    }
+
+    function draw() {
+      ctx.fillStyle = "#151515";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // пол для ориентира
+      ctx.fillStyle = "#242424";
+      ctx.fillRect(0, groundY, canvas.width, canvas.height - groundY);
+
+      // герой
+      if (heroImg.complete) {
+        ctx.drawImage(heroImg, hero.x, hero.y, hero.w, hero.h);
+      } else {
+        ctx.fillStyle = "#4caf50";
+        ctx.fillRect(hero.x, hero.y, hero.w, hero.h);
+      }
+
+      // препятствия
+      for (const o of obstacles) {
+        if (o.img.complete) {
+          ctx.drawImage(o.img, o.x, o.y, o.w, o.h);
+        } else {
+          ctx.fillStyle = "#f44336";
+          ctx.fillRect(o.x, o.y, o.w, o.h);
         }
+      }
+
+      // HUD
+      if (scoreIcon.complete) {
+        ctx.drawImage(scoreIcon, 10, 10, 24, 24);
+      }
+      ctx.fillStyle = "#fff";
+      ctx.font = "18px system-ui";
+      ctx.fillText(Math.floor(score), 40, 30);
+    }
+
+    let lastTime = performance.now();
+    function loop(t) {
+      const dt = t - lastTime;
+      lastTime = t;
+      update(dt);
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    // управление с клавиатуры
+    window.addEventListener("keydown", e => {
+      if (e.code === "ArrowLeft" || e.code === "KeyA") {
+        hero.dir = -1;
+      }
+      if (e.code === "ArrowRight" || e.code === "KeyD") {
+        hero.dir = 1;
+      }
     });
-}
 
-function draw(){
-    ctx.clearRect(0,0,800,500);
-
-    ctx.drawImage(heroImg, hero.x, hero.y, hero.w, hero.h);
-
-    obstacles.forEach(o=>{
-        ctx.drawImage(o.img, o.x, o.y, o.w, o.h);
+    window.addEventListener("keyup", e => {
+      if (
+        e.code === "ArrowLeft" || e.code === "KeyA" ||
+        e.code === "ArrowRight" || e.code === "KeyD"
+      ) {
+        hero.dir = 0;
+      }
     });
 
-    ctx.drawImage(scoreIcon,20,20,32,32);
-    ctx.fillStyle="white";
-    ctx.font="24px Arial";
-    ctx.fillText(score,60,45);
+    // тач-управление: левая/правая половина экрана
+    canvas.addEventListener("touchstart", e => {
+      const touch = e.touches[0];
+      const rect = canvas.getBoundingClientRect();
+      const x = touch.clientX - rect.left;
+      hero.dir = x < canvas.width / 2 ? -1 : 1;
+    });
 
-    update();
-    requestAnimationFrame(draw);
-}
+    canvas.addEventListener("touchend", () => {
+      hero.dir = 0;
+    });
 
-draw();
-</script>
+    resetGame();
+    requestAnimationFrame(loop);
+  </script>
 </body>
 </html>
